@@ -23,18 +23,19 @@
 
 #include <stdlib.h>
 #include <stdio.h>
+
+#include "libavutil/attributes.h"
 #include "libavutil/cpu.h"
-#include "libavcodec/dsputil.h"
+#include "libavutil/ppc/types_altivec.h"
+#include "libavutil/ppc/util_altivec.h"
 #include "libavcodec/mpegvideo.h"
 
-#include "util_altivec.h"
-#include "types_altivec.h"
 #include "dsputil_altivec.h"
 
 /* AltiVec version of dct_unquantize_h263
    this code assumes `block' is 16 bytes-aligned */
 static void dct_unquantize_h263_altivec(MpegEncContext *s,
-                                 DCTELEM *block, int n, int qscale)
+                                 int16_t *block, int n, int qscale)
 {
     int i, level, qmul, qadd;
     int nCoeffs;
@@ -111,7 +112,7 @@ static void dct_unquantize_h263_altivec(MpegEncContext *s,
 }
 
 
-void ff_MPV_common_init_altivec(MpegEncContext *s)
+av_cold void ff_MPV_common_init_altivec(MpegEncContext *s)
 {
     if (!(av_get_cpu_flags() & AV_CPU_FLAG_ALTIVEC)) return;
 

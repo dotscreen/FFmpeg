@@ -25,7 +25,7 @@
  * H.261 encoder.
  */
 
-#include "dsputil.h"
+#include "libavutil/avassert.h"
 #include "avcodec.h"
 #include "mpegvideo.h"
 #include "h263.h"
@@ -34,7 +34,7 @@
 
 extern uint8_t ff_h261_rl_table_store[2][2*MAX_RUN + MAX_LEVEL + 3];
 
-static void h261_encode_block(H261Context * h, DCTELEM * block,
+static void h261_encode_block(H261Context * h, int16_t * block,
                               int n);
 
 int ff_h261_get_picture_format(int width, int height){
@@ -143,7 +143,7 @@ static void h261_encode_motion(H261Context * h, int val){
 }
 
 static inline int get_cbp(MpegEncContext * s,
-                      DCTELEM block[6][64])
+                      int16_t block[6][64])
 {
     int i, cbp;
     cbp= 0;
@@ -154,7 +154,7 @@ static inline int get_cbp(MpegEncContext * s,
     return cbp;
 }
 void ff_h261_encode_mb(MpegEncContext * s,
-         DCTELEM block[6][64],
+         int16_t block[6][64],
          int motion_x, int motion_y)
 {
     H261Context * h = (H261Context *)s;
@@ -194,7 +194,7 @@ void ff_h261_encode_mb(MpegEncContext * s,
             h->mtype+=3;
         if(cbp || s->dquant)
             h->mtype++;
-        assert(h->mtype > 1);
+        av_assert1(h->mtype > 1);
     }
 
     if(s->dquant)
@@ -221,7 +221,7 @@ void ff_h261_encode_mb(MpegEncContext * s,
     h->previous_mba = h->current_mba;
 
     if(HAS_CBP(h->mtype)){
-        assert(cbp>0);
+        av_assert1(cbp>0);
         put_bits(&s->pb,ff_h261_cbp_tab[cbp-1][1],ff_h261_cbp_tab[cbp-1][0]);
     }
     for(i=0; i<6; i++) {
@@ -255,7 +255,7 @@ void ff_h261_encode_init(MpegEncContext *s){
  * @param block the 8x8 block
  * @param n block index (0-3 are luma, 4-5 are chroma)
  */
-static void h261_encode_block(H261Context * h, DCTELEM * block, int n){
+static void h261_encode_block(H261Context * h, int16_t * block, int n){
     MpegEncContext * const s = &h->s;
     int level, run, i, j, last_index, last_non_zero, sign, slevel, code;
     RLTable *rl;
@@ -307,8 +307,8 @@ static void h261_encode_block(H261Context * h, DCTELEM * block, int n){
             put_bits(&s->pb, rl->table_vlc[code][1], rl->table_vlc[code][0]);
             if (code == rl->n) {
                 put_bits(&s->pb, 6, run);
-                assert(slevel != 0);
-                assert(level <= 127);
+                av_assert1(slevel != 0);
+                av_assert1(level <= 127);
                 put_sbits(&s->pb, 8, slevel);
             } else {
                 put_bits(&s->pb, 1, sign);
@@ -326,12 +326,12 @@ FF_MPV_GENERIC_CLASS(h261)
 AVCodec ff_h261_encoder = {
     .name           = "h261",
     .type           = AVMEDIA_TYPE_VIDEO,
-    .id             = CODEC_ID_H261,
+    .id             = AV_CODEC_ID_H261,
     .priv_data_size = sizeof(H261Context),
     .init           = ff_MPV_encode_init,
     .encode2        = ff_MPV_encode_picture,
     .close          = ff_MPV_encode_end,
-    .pix_fmts       = (const enum PixelFormat[]){ PIX_FMT_YUV420P, PIX_FMT_NONE },
+    .pix_fmts       = (const enum AVPixelFormat[]){ AV_PIX_FMT_YUV420P, AV_PIX_FMT_NONE },
     .long_name      = NULL_IF_CONFIG_SMALL("H.261"),
     .priv_class     = &h261_class,
 };

@@ -21,15 +21,15 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
+#include "libavutil/channel_layout.h"
 #include "libavutil/common.h"
 #include "libavutil/avassert.h"
-#include "libavutil/audioconvert.h"
 #include "avcodec.h"
-#include "get_bits.h"
 #include "internal.h"
 #include "put_bits.h"
 #include "dcaenc.h"
 #include "dcadata.h"
+#include "dca.h"
 
 #undef NDEBUG
 
@@ -497,7 +497,7 @@ static int encode_frame(AVCodecContext *avctx, AVPacket *avpkt,
     const int16_t *samples;
     int ret, real_channel = 0;
 
-    if ((ret = ff_alloc_packet2(avctx, avpkt, DCA_MAX_FRAME_SIZE + DCA_HEADER_SIZE)))
+    if ((ret = ff_alloc_packet2(avctx, avpkt, DCA_MAX_FRAME_SIZE + DCA_HEADER_SIZE)) < 0)
         return ret;
 
     samples = (const int16_t *)frame->data[0];
@@ -569,13 +569,13 @@ static int encode_init(AVCodecContext *avctx)
     }
 
     for (i = 0; i < 16; i++) {
-        if (dca_sample_rates[i] && (dca_sample_rates[i] == avctx->sample_rate))
+        if (avpriv_dca_sample_rates[i] && (avpriv_dca_sample_rates[i] == avctx->sample_rate))
             break;
     }
     if (i == 16) {
         av_log(avctx, AV_LOG_ERROR, "Sample rate %iHz not supported, only ", avctx->sample_rate);
         for (i = 0; i < 16; i++)
-            av_log(avctx, AV_LOG_ERROR, "%d, ", dca_sample_rates[i]);
+            av_log(avctx, AV_LOG_ERROR, "%d, ", avpriv_dca_sample_rates[i]);
         av_log(avctx, AV_LOG_ERROR, "supported.\n");
         return -1;
     }
@@ -591,11 +591,12 @@ static int encode_init(AVCodecContext *avctx)
 AVCodec ff_dca_encoder = {
     .name           = "dca",
     .type           = AVMEDIA_TYPE_AUDIO,
-    .id             = CODEC_ID_DTS,
+    .id             = AV_CODEC_ID_DTS,
     .priv_data_size = sizeof(DCAContext),
     .init           = encode_init,
     .encode2        = encode_frame,
     .capabilities   = CODEC_CAP_EXPERIMENTAL,
-    .sample_fmts    = (const enum AVSampleFormat[]){AV_SAMPLE_FMT_S16,AV_SAMPLE_FMT_NONE},
+    .sample_fmts    = (const enum AVSampleFormat[]){ AV_SAMPLE_FMT_S16,
+                                                     AV_SAMPLE_FMT_NONE },
     .long_name      = NULL_IF_CONFIG_SMALL("DCA (DTS Coherent Acoustics)"),
 };

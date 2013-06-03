@@ -24,6 +24,7 @@
 /**
  * @file
  * API example for decoding and filtering
+ * @example doc/examples/filtering_video.c
  */
 
 #define _XOPEN_SOURCE 600 /* for usleep */
@@ -34,6 +35,7 @@
 #include <libavfilter/avfiltergraph.h>
 #include <libavfilter/avcodec.h>
 #include <libavfilter/buffersink.h>
+#include <libavfilter/buffersrc.h>
 
 const char *filter_descr = "scale=78:24";
 
@@ -83,17 +85,21 @@ static int init_filters(const char *filters_descr)
     char args[512];
     int ret;
     AVFilter *buffersrc  = avfilter_get_by_name("buffer");
-    AVFilter *buffersink = avfilter_get_by_name("buffersink");
+    AVFilter *buffersink = avfilter_get_by_name("ffbuffersink");
     AVFilterInOut *outputs = avfilter_inout_alloc();
     AVFilterInOut *inputs  = avfilter_inout_alloc();
-    enum PixelFormat pix_fmts[] = { PIX_FMT_GRAY8, PIX_FMT_NONE };
+    enum AVPixelFormat pix_fmts[] = { AV_PIX_FMT_GRAY8, AV_PIX_FMT_NONE };
+    AVBufferSinkParams *buffersink_params;
+
     filter_graph = avfilter_graph_alloc();
 
     /* buffer video source: the decoded frames from the decoder will be inserted here. */
-    snprintf(args, sizeof(args), "%d:%d:%d:%d:%d:%d:%d",
-             dec_ctx->width, dec_ctx->height, dec_ctx->pix_fmt,
-             dec_ctx->time_base.num, dec_ctx->time_base.den,
-             dec_ctx->sample_aspect_ratio.num, dec_ctx->sample_aspect_ratio.den);
+    snprintf(args, sizeof(args),
+            "video_size=%dx%d:pix_fmt=%d:time_base=%d/%d:pixel_aspect=%d/%d",
+            dec_ctx->width, dec_ctx->height, dec_ctx->pix_fmt,
+            dec_ctx->time_base.num, dec_ctx->time_base.den,
+            dec_ctx->sample_aspect_ratio.num, dec_ctx->sample_aspect_ratio.den);
+
     ret = avfilter_graph_create_filter(&buffersrc_ctx, buffersrc, "in",
                                        args, NULL, filter_graph);
     if (ret < 0) {
@@ -102,8 +108,11 @@ static int init_filters(const char *filters_descr)
     }
 
     /* buffer video sink: to terminate the filter chain. */
+    buffersink_params = av_buffersink_params_alloc();
+    buffersink_params->pixel_fmts = pix_fmts;
     ret = avfilter_graph_create_filter(&buffersink_ctx, buffersink, "out",
-                                       NULL, pix_fmts, filter_graph);
+                                       NULL, buffersink_params, filter_graph);
+    av_free(buffersink_params);
     if (ret < 0) {
         av_log(NULL, AV_LOG_ERROR, "Cannot create buffer sink\n");
         return ret;
@@ -164,9 +173,13 @@ int main(int argc, char **argv)
 {
     int ret;
     AVPacket packet;
-    AVFrame frame;
+    AVFrame *frame = avcodec_alloc_frame();
     int got_frame;
 
+    if (!frame) {
+        perror("Could not allocate frame");
+        exit(1);
+    }
     if (argc != 2) {
         fprintf(stderr, "Usage: %s file\n", argv[0]);
         exit(1);
@@ -188,37 +201,46 @@ int main(int argc, char **argv)
             break;
 
         if (packet.stream_index == video_stream_index) {
-            avcodec_get_frame_defaults(&frame);
+            avcodec_get_frame_defaults(frame);
             got_frame = 0;
-            ret = avcodec_decode_video2(dec_ctx, &frame, &got_frame, &packet);
-            av_free_packet(&packet);
+            ret = avcodec_decode_video2(dec_ctx, frame, &got_frame, &packet);
             if (ret < 0) {
                 av_log(NULL, AV_LOG_ERROR, "Error decoding video\n");
                 break;
             }
 
             if (got_frame) {
-                frame.pts = av_frame_get_best_effort_timestamp(&frame);
+                frame->pts = av_frame_get_best_effort_timestamp(frame);
 
                 /* push the decoded frame into the filtergraph */
-                av_vsrc_buffer_add_frame(buffersrc_ctx, &frame, 0);
+                if (av_buffersrc_add_frame(buffersrc_ctx, frame, 0) < 0) {
+                    av_log(NULL, AV_LOG_ERROR, "Error while feeding the filtergraph\n");
+                    break;
+                }
 
                 /* pull filtered pictures from the filtergraph */
-                while (avfilter_poll_frame(buffersink_ctx->inputs[0])) {
-                    av_buffersink_get_buffer_ref(buffersink_ctx, &picref, 0);
+                while (1) {
+                    ret = av_buffersink_get_buffer_ref(buffersink_ctx, &picref, 0);
+                    if (ret == AVERROR(EAGAIN) || ret == AVERROR_EOF)
+                        break;
+                    if (ret < 0)
+                        goto end;
+
                     if (picref) {
                         display_picref(picref, buffersink_ctx->inputs[0]->time_base);
-                        avfilter_unref_buffer(picref);
+                        avfilter_unref_bufferp(&picref);
                     }
                 }
             }
         }
+        av_free_packet(&packet);
     }
 end:
     avfilter_graph_free(&filter_graph);
     if (dec_ctx)
         avcodec_close(dec_ctx);
     avformat_close_input(&fmt_ctx);
+    av_freep(&frame);
 
     if (ret < 0 && ret != AVERROR_EOF) {
         char buf[1024];
