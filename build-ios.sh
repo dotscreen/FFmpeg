@@ -35,22 +35,23 @@ function build_arch() {
     EXTRA_FLAGS="-arch ${arch_code} -isysroot ${SDK_HOME}"
 
     echo "SDK $arch: $SDK_HOME"
-    make distclean > /dev/null 2>&1 
-    ./configure --cross-prefix=${TOOLS_PATH} $FFMPEG_GENERAL_OPTIONS $arch_options --sysroot=${SDK_HOME} "--extra-cflags=${EXTRA_FLAGS}" "--extra-ldflags=${EXTRA_FLAGS}" "--as='gas-preprocessor/gas-preprocessor.pl ${TOOLS_PATH}/gcc'"
+    make distclean > /dev/null 2>&1
+    ./configure --prefix=${arch_code} --cross-prefix=${TOOLS_PATH} $FFMPEG_GENERAL_OPTIONS $arch_options --sysroot=${SDK_HOME} "--extra-cflags=${EXTRA_FLAGS}" "--extra-ldflags=${EXTRA_FLAGS}" "--as='gas-preprocessor/gas-preprocessor.pl ${TOOLS_PATH}/gcc'"
     make -j3 || exit 1
+    make install
 
-    for lib in $modules; do
-        mv "${lib}/${lib}.a" "${TARGET_PATH}/${lib}-${arch_code}.a"
-    done
+#for lib in $modules; do
+#        mv "${lib}/${lib}.a" "${TARGET_PATH}/${lib}-${arch_code}.a"
+#    done
 }
 
 function package_lib() {
     for lib in $modules; do
         args=""
-        for arch in i386 armv7; do
-            args="${args} -arch ${arch} ${TARGET_PATH}/${lib}-${arch}.a"
+        for arch in i386 armv7 armv7s; do
+            args="${args} -arch ${arch} ${TARGET_PATH}/${arch}/lib/${lib}.a"
         done
-        lipo -create $args -output "${TARGET_PATH}/$lib.a"
+        xcrun -sdk iphoneos lipo -create $args -output "${TARGET_PATH}/universal/lib/$lib.a"
     done
 }
 
@@ -62,8 +63,8 @@ FFMPEG_GENERAL_OPTIONS="${FFMPEG_GENERAL_OPTIONS} --disable-doc --disable-ffmpeg
 FFMPEG_GENERAL_OPTIONS="${FFMPEG_GENERAL_OPTIONS} --disable-debug --disable-asm"
 
 build_arch iPhoneSimulator 6.1 i386 "--arch=i386"
-build_arch iPhoneOS 6.1 armv7 "--cpu=cortex-a8 --arch=arm --enable-neon"
-build_arch iPhoneOS 6.1 armv7s "--cpu=cortex-a9 --arch=arm --enable-neon"
+build_arch iPhoneOS 6.1 armv7 "--cpu=cortex-a8 --arch=arm"
+build_arch iPhoneOS 6.1 armv7s "--cpu=cortex-a9 --arch=arm"
 
 package_lib
 
